@@ -1,0 +1,26 @@
+{
+  "name": "restless",
+  "version": "0.1.0",
+  "description": "CLI tool for consuming OpenAPI specs and executing operations",
+  "type": "module",
+  "bin": {
+    "restless": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run src/cli.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

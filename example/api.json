@@ -1,0 +1,4 @@
+{
+  "spec": "example/petstore.yaml",
+  "server": "https://swagger.io/api/v3"
+}
