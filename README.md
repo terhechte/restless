@@ -1,6 +1,8 @@
 # RESTLESS
 
-![media/logo.png](media/logo.png)
+<div align="center">
+  <img src="media/logo.png" width="50%">
+</div>
 
 A minimal CLI tool for consuming OpenAPI specs. Browse available operations, inspect parameters, and execute API calls directly from your terminal.
 
@@ -65,12 +67,12 @@ Each config file defines a single API:
 }
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `spec` | Yes | URL or local file path to an OpenAPI spec (JSON or YAML) |
-| `server` | No | Override the server URL from the spec |
-| `auth.basic` | No | Basic auth credentials (used for both spec fetching and API calls) |
-| `headers` | No | Headers to include in every request |
+| Field        | Required | Description                                                        |
+| ------------ | -------- | ------------------------------------------------------------------ |
+| `spec`       | Yes      | URL or local file path to an OpenAPI spec (JSON or YAML)           |
+| `server`     | No       | Override the server URL from the spec                              |
+| `auth.basic` | No       | Basic auth credentials (used for both spec fetching and API calls) |
+| `headers`    | No       | Headers to include in every request                                |
 
 Header values prefixed with `sh:` execute the command and use its stdout as the value. Commands run with the config file's directory as the working directory.
 
