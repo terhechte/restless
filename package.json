@@ -1,6 +1,6 @@
 {
   "name": "restless",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI tool for consuming OpenAPI specs and executing operations",
   "type": "module",
   "bin": {
