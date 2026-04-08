@@ -17932,6 +17932,22 @@ function printOperationHelp(operations) {
 }
 
 // src/cli.ts
+function formatError(error) {
+  if (!(error instanceof Error))
+    return String(error);
+  const parts = [error.message];
+  let current = error.cause;
+  while (current) {
+    if (current instanceof Error) {
+      parts.push(current.message);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(": ");
+}
 function parseCliArgs(argv) {
   const { values, positionals } = parseArgs({
     args: argv.slice(2),
@@ -18044,13 +18060,21 @@ async function main() {
       console.error("");
     }
     const response = await executeRequest(prepared);
-    const formatted = await formatResponse(response, args.verbose);
+    const failed = response.status >= 400;
+    const showDetails = args.verbose || failed;
+    const formatted = await formatResponse(response, showDetails);
+    if (failed && !args.verbose) {
+      console.error(`>>> Request:`);
+      console.error(formatPreparedRequest(prepared));
+      console.error("");
+      console.error(`<<< Response:`);
+    }
     console.log(formatted);
-    if (response.status >= 400) {
+    if (failed) {
       process.exit(1);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatError(error);
     console.error(`Error: ${message}`);
     process.exit(1);
   }

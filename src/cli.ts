@@ -6,6 +6,23 @@ import { formatResponse, formatPreparedRequest } from "./format.ts";
 import { printUsage, printOperationList, printOperationHelp } from "./help.ts";
 import type { ParsedArgs, ResolvedOperation } from "./types.ts";
 
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const parts: string[] = [error.message];
+  let current: unknown = error.cause;
+  while (current) {
+    if (current instanceof Error) {
+      parts.push(current.message);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(": ");
+}
+
 function parseCliArgs(argv: string[]): ParsedArgs {
   const { values, positionals } = parseArgs({
     args: argv.slice(2),
@@ -153,14 +170,28 @@ async function main(): Promise<void> {
     }
 
     const response = await executeRequest(prepared);
-    const formatted = await formatResponse(response, args.verbose);
+    const failed = response.status >= 400;
+
+    // On failure with --verbose, show full response details even if
+    // they wouldn't normally be printed
+    const showDetails = args.verbose || failed;
+    const formatted = await formatResponse(response, showDetails);
+
+    if (failed && !args.verbose) {
+      // Print request details to stderr so user sees what was sent
+      console.error(`>>> Request:`);
+      console.error(formatPreparedRequest(prepared));
+      console.error("");
+      console.error(`<<< Response:`);
+    }
+
     console.log(formatted);
 
-    if (response.status >= 400) {
+    if (failed) {
       process.exit(1);
     }
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatError(error);
     console.error(`Error: ${message}`);
     process.exit(1);
   }
