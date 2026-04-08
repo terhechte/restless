@@ -17743,12 +17743,24 @@ function prepareRequest(baseUrl, operation, args, config) {
     body: args.body ?? undefined
   };
 }
+function getProxy(url) {
+  const isHttps = url.startsWith("https://");
+  if (isHttps) {
+    return process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  }
+  return process.env.HTTP_PROXY || process.env.http_proxy;
+}
 async function executeRequest(prepared) {
-  return fetch(prepared.url, {
+  const proxy = getProxy(prepared.url);
+  const opts = {
     method: prepared.method,
     headers: prepared.headers,
     body: prepared.body
-  });
+  };
+  if (proxy) {
+    opts.proxy = proxy;
+  }
+  return fetch(prepared.url, opts);
 }
 
 // src/format.ts
@@ -18050,13 +18062,18 @@ async function main() {
       }
     }
     const prepared = prepareRequest(spec.baseUrl, operation, args, config);
+    const proxy = getProxy(prepared.url);
     if (args.dryRun) {
       console.log(formatPreparedRequest(prepared));
+      if (proxy)
+        console.log(`Proxy: ${proxy}`);
       process.exit(0);
     }
     if (args.verbose) {
       console.error(">>> Request:");
       console.error(formatPreparedRequest(prepared));
+      if (proxy)
+        console.error(`Proxy: ${proxy}`);
       console.error("");
     }
     const response = await executeRequest(prepared);

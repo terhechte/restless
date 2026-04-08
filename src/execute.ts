@@ -104,12 +104,26 @@ export function prepareRequest(
   };
 }
 
+export function getProxy(url: string): string | undefined {
+  const isHttps = url.startsWith("https://");
+  if (isHttps) {
+    return process.env.HTTPS_PROXY || process.env.https_proxy
+      || process.env.HTTP_PROXY || process.env.http_proxy;
+  }
+  return process.env.HTTP_PROXY || process.env.http_proxy;
+}
+
 export async function executeRequest(
   prepared: PreparedRequest,
 ): Promise<Response> {
-  return fetch(prepared.url, {
+  const proxy = getProxy(prepared.url);
+  const opts: RequestInit & { proxy?: string } = {
     method: prepared.method,
     headers: prepared.headers,
     body: prepared.body,
-  });
+  };
+  if (proxy) {
+    opts.proxy = proxy;
+  }
+  return fetch(prepared.url, opts);
 }

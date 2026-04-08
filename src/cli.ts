@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { loadConfig } from "./config.ts";
 import { loadSpec } from "./spec.ts";
-import { prepareRequest, executeRequest } from "./execute.ts";
+import { prepareRequest, executeRequest, getProxy } from "./execute.ts";
 import { formatResponse, formatPreparedRequest } from "./format.ts";
 import { printUsage, printOperationList, printOperationHelp } from "./help.ts";
 import type { ParsedArgs, ResolvedOperation } from "./types.ts";
@@ -158,14 +158,18 @@ async function main(): Promise<void> {
 
     const prepared = prepareRequest(spec.baseUrl, operation, args, config);
 
+    const proxy = getProxy(prepared.url);
+
     if (args.dryRun) {
       console.log(formatPreparedRequest(prepared));
+      if (proxy) console.log(`Proxy: ${proxy}`);
       process.exit(0);
     }
 
     if (args.verbose) {
       console.error(">>> Request:");
       console.error(formatPreparedRequest(prepared));
+      if (proxy) console.error(`Proxy: ${proxy}`);
       console.error("");
     }
 
