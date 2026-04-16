@@ -33,6 +33,8 @@ export interface ResolvedRequestBody {
   required: boolean;
   contentTypes: string[];
   description?: string;
+  /** Schema per content type (post-dereference). */
+  schemas: Record<string, unknown>;
 }
 
 export interface ResolvedOperation {
@@ -57,6 +59,7 @@ export interface ParsedArgs {
   verbose: boolean;
   dryRun: boolean;
   help: boolean;
+  explainEndpoint: string | null;
 }
 
 export interface PreparedRequest {

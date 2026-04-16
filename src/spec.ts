@@ -74,10 +74,18 @@ function extractRequestBody(
 ): ResolvedRequestBody | undefined {
   // OpenAPI 3.x
   if (operation.requestBody && "content" in operation.requestBody) {
+    const content = operation.requestBody.content as Record<string, any>;
+    const schemas: Record<string, unknown> = {};
+    for (const [ct, mediaType] of Object.entries(content)) {
+      if (mediaType && typeof mediaType === "object" && "schema" in mediaType) {
+        schemas[ct] = mediaType.schema;
+      }
+    }
     return {
       required: operation.requestBody.required ?? false,
-      contentTypes: Object.keys(operation.requestBody.content),
+      contentTypes: Object.keys(content),
       description: operation.requestBody.description,
+      schemas,
     };
   }
   // Swagger 2.0: body parameter
@@ -85,10 +93,16 @@ function extractRequestBody(
     (p: any) => p.in === "body",
   );
   if (bodyParam) {
+    const contentTypes: string[] = operation.consumes ?? ["application/json"];
+    const schemas: Record<string, unknown> = {};
+    if (bodyParam.schema) {
+      for (const ct of contentTypes) schemas[ct] = bodyParam.schema;
+    }
     return {
       required: bodyParam.required ?? false,
-      contentTypes: operation.consumes ?? ["application/json"],
+      contentTypes,
       description: bodyParam.description,
+      schemas,
     };
   }
   return undefined;

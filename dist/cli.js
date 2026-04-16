@@ -17596,18 +17596,33 @@ function mergeParameters(pathLevel, opLevel) {
 }
 function extractRequestBody(operation) {
   if (operation.requestBody && "content" in operation.requestBody) {
+    const content = operation.requestBody.content;
+    const schemas = {};
+    for (const [ct, mediaType] of Object.entries(content)) {
+      if (mediaType && typeof mediaType === "object" && "schema" in mediaType) {
+        schemas[ct] = mediaType.schema;
+      }
+    }
     return {
       required: operation.requestBody.required ?? false,
-      contentTypes: Object.keys(operation.requestBody.content),
-      description: operation.requestBody.description
+      contentTypes: Object.keys(content),
+      description: operation.requestBody.description,
+      schemas
     };
   }
   const bodyParam = (operation.parameters ?? []).find((p) => p.in === "body");
   if (bodyParam) {
+    const contentTypes = operation.consumes ?? ["application/json"];
+    const schemas = {};
+    if (bodyParam.schema) {
+      for (const ct of contentTypes)
+        schemas[ct] = bodyParam.schema;
+    }
     return {
       required: bodyParam.required ?? false,
-      contentTypes: operation.consumes ?? ["application/json"],
-      description: bodyParam.description
+      contentTypes,
+      description: bodyParam.description,
+      schemas
     };
   }
   return;
@@ -17823,18 +17838,20 @@ function printUsage() {
   console.log(`restless - CLI for OpenAPI specs
 
 Usage:
-  restless <config.json>                              List all operations
-  restless <config.json> <operationId>                Execute an operation
-  restless <config.json> <operationId> --help         Show operation details
+  restless <config.json>                                   List all operations
+  restless <config.json> <operationId>                     Execute an operation
+  restless <config.json> <operationId> --help              Show operation details
+  restless <config.json> --explain-endpoint <operationId>  Show operation details
 
 Options:
-  -q key=value     Query parameter (repeatable)
-  -H Key:value     HTTP header (repeatable)
-  -d <body>        Request body (JSON string)
-  -p key=value     Path parameter (repeatable)
-  --verbose        Show request and response details
-  --dry-run        Show request without sending
-  --help           Show this help
+  -q key=value              Query parameter (repeatable)
+  -H Key:value              HTTP header (repeatable)
+  -d <body>                 Request body (JSON string)
+  -p key=value              Path parameter (repeatable)
+  --verbose                 Show request and response details
+  --dry-run                 Show request without sending
+  --explain-endpoint <id>   Show operation details (alias for "<id> --help")
+  --help                    Show this help
 
 Config file format:
   {
@@ -17926,8 +17943,10 @@ function printOperationHelp(operations) {
       console.log("  Parameters:");
       for (const p of params) {
         const req = p.required ? "required" : "optional";
-        const desc = p.description ? `  ${p.description}` : "";
-        console.log(`    [${p.in}] ${p.name} (${req})${desc}`);
+        const typeLabel = p.schema ? `: ${formatSchema(p.schema, "      ")}` : "";
+        console.log(`    [${p.in}] ${p.name} (${req})${typeLabel}`);
+        if (p.description)
+          console.log(`      ${p.description}`);
       }
       console.log();
     }
@@ -17938,9 +17957,183 @@ function printOperationHelp(operations) {
       if (op.requestBody.description) {
         console.log(`    ${op.requestBody.description}`);
       }
+      const schemas = op.requestBody.schemas;
+      const schemaEntries = Object.entries(schemas);
+      const grouped = new Map;
+      for (const [ct, schema] of schemaEntries) {
+        const list = grouped.get(schema) ?? [];
+        list.push(ct);
+        grouped.set(schema, list);
+      }
+      for (const [schema, cts] of grouped) {
+        if (schema === undefined || schema === null)
+          continue;
+        console.log();
+        console.log(`    Schema (${cts.join(", ")}):`);
+        console.log(`      ${formatSchema(schema, "      ")}`);
+      }
       console.log();
     }
   }
+}
+function formatSchema(schema, indent = "") {
+  return renderSchema(schema, indent, new WeakSet);
+}
+function renderSchema(schema, indent, seen) {
+  if (schema === null || schema === undefined)
+    return "any";
+  if (typeof schema !== "object")
+    return "any";
+  if (seen.has(schema))
+    return "[circular]";
+  seen.add(schema);
+  try {
+    return renderSchemaBody(schema, indent, seen);
+  } finally {
+    seen.delete(schema);
+  }
+}
+function renderSchemaBody(schema, indent, seen) {
+  for (const key of ["oneOf", "anyOf", "allOf"]) {
+    if (Array.isArray(schema[key]) && schema[key].length > 0) {
+      const sep = key === "allOf" ? " & " : " | ";
+      const parts = schema[key].map((s) => renderSchema(s, indent, seen));
+      if (parts.some((p) => p.includes(`
+`))) {
+        const joiner = `
+${indent}${sep.trim()} `;
+        return parts.join(joiner);
+      }
+      return parts.join(sep);
+    }
+  }
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum.map((v) => JSON.stringify(v)).join(" | ");
+  }
+  if ("const" in schema) {
+    return JSON.stringify(schema.const);
+  }
+  const type = schema.type;
+  const isObject = type === "object" || schema.properties || schema.additionalProperties;
+  const isArray = type === "array" || schema.items;
+  if (isObject)
+    return renderObject(schema, indent, seen);
+  if (isArray)
+    return renderArray(schema, indent, seen);
+  return renderPrimitive(schema);
+}
+function renderPrimitive(schema) {
+  const type = schema.type;
+  let t;
+  if (Array.isArray(type)) {
+    t = type.map((x) => String(x)).join(" | ");
+  } else if (typeof type === "string") {
+    t = type;
+    if (schema.nullable)
+      t = `${t} | null`;
+  } else {
+    t = "any";
+  }
+  return t;
+}
+function renderObject(schema, indent, seen) {
+  const props = schema.properties ?? {};
+  const required = new Set(schema.required ?? []);
+  const entries = Object.entries(props);
+  const additional = schema.additionalProperties;
+  if (entries.length === 0 && !additional) {
+    return schema.nullable ? "object | null" : "object";
+  }
+  const inner = indent + "  ";
+  const lines = ["{"];
+  for (const [key, propSchema] of entries) {
+    const opt = required.has(key) ? "" : "?";
+    const rendered = renderSchema(propSchema, inner, seen);
+    const meta = describeMeta(propSchema);
+    const trailing = meta ? `  // ${meta}` : "";
+    lines.push(`${inner}${key}${opt}: ${rendered}${trailing}`);
+  }
+  if (additional) {
+    if (additional === true) {
+      lines.push(`${inner}[key: string]: any`);
+    } else {
+      const rendered = renderSchema(additional, inner, seen);
+      lines.push(`${inner}[key: string]: ${rendered}`);
+    }
+  }
+  lines.push(`${indent}}${schema.nullable ? " | null" : ""}`);
+  return lines.join(`
+`);
+}
+function renderArray(schema, indent, seen) {
+  const items = schema.items;
+  const nullable = schema.nullable ? " | null" : "";
+  if (!items)
+    return `any[]${nullable}`;
+  const rendered = renderSchema(items, indent + "  ", seen);
+  if (rendered.includes(`
+`)) {
+    const inner = indent + "  ";
+    return `[
+${inner}${rendered}
+${indent}]${nullable}`;
+  }
+  const needsParens = /\s[|&]\s/.test(rendered);
+  const wrapped = needsParens ? `(${rendered})` : rendered;
+  return `${wrapped}[]${nullable}`;
+}
+function describeMeta(schema) {
+  if (!schema || typeof schema !== "object")
+    return "";
+  const s = schema;
+  const parts = [];
+  if (typeof s.format === "string")
+    parts.push(s.format);
+  if (s.deprecated)
+    parts.push("deprecated");
+  if (s.readOnly)
+    parts.push("readOnly");
+  if (s.writeOnly)
+    parts.push("writeOnly");
+  if (typeof s.default !== "undefined") {
+    parts.push(`default: ${JSON.stringify(s.default)}`);
+  }
+  if (typeof s.example !== "undefined") {
+    parts.push(`example: ${JSON.stringify(s.example)}`);
+  }
+  if (Array.isArray(s.examples) && s.examples.length > 0) {
+    parts.push(`examples: ${s.examples.map((e) => JSON.stringify(e)).join(", ")}`);
+  }
+  if (typeof s.minimum === "number")
+    parts.push(`min: ${s.minimum}`);
+  if (typeof s.maximum === "number")
+    parts.push(`max: ${s.maximum}`);
+  if (typeof s.exclusiveMinimum === "number") {
+    parts.push(`exclusiveMin: ${s.exclusiveMinimum}`);
+  }
+  if (typeof s.exclusiveMaximum === "number") {
+    parts.push(`exclusiveMax: ${s.exclusiveMaximum}`);
+  }
+  if (typeof s.multipleOf === "number")
+    parts.push(`multipleOf: ${s.multipleOf}`);
+  if (typeof s.minLength === "number")
+    parts.push(`minLength: ${s.minLength}`);
+  if (typeof s.maxLength === "number")
+    parts.push(`maxLength: ${s.maxLength}`);
+  if (typeof s.minItems === "number")
+    parts.push(`minItems: ${s.minItems}`);
+  if (typeof s.maxItems === "number")
+    parts.push(`maxItems: ${s.maxItems}`);
+  if (s.uniqueItems)
+    parts.push("uniqueItems");
+  if (typeof s.pattern === "string")
+    parts.push(`pattern: ${s.pattern}`);
+  if (typeof s.description === "string") {
+    const desc = s.description.replace(/\s+/g, " ").trim();
+    if (desc)
+      parts.push(desc);
+  }
+  return parts.join("; ");
 }
 
 // src/cli.ts
@@ -17971,7 +18164,8 @@ function parseCliArgs(argv) {
       param: { type: "string", multiple: true, short: "p" },
       verbose: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
-      help: { type: "boolean", default: false }
+      help: { type: "boolean", default: false },
+      "explain-endpoint": { type: "string" }
     }
   });
   const queryParams = new Map;
@@ -18007,12 +18201,17 @@ function parseCliArgs(argv) {
     body: values.data ?? null,
     verbose: values.verbose ?? false,
     dryRun: values["dry-run"] ?? false,
-    help: values.help ?? false
+    help: values.help ?? false,
+    explainEndpoint: values["explain-endpoint"] ?? null
   };
 }
 async function main() {
   try {
     const args = parseCliArgs(process.argv);
+    if (args.explainEndpoint) {
+      args.operationId = args.explainEndpoint;
+      args.help = true;
+    }
     if (args.help && !args.configPath) {
       printUsage();
       process.exit(0);

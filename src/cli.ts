@@ -35,6 +35,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
       verbose: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
+      "explain-endpoint": { type: "string" },
     },
   });
 
@@ -84,12 +85,20 @@ function parseCliArgs(argv: string[]): ParsedArgs {
     verbose: values.verbose ?? false,
     dryRun: values["dry-run"] ?? false,
     help: values.help ?? false,
+    explainEndpoint: values["explain-endpoint"] ?? null,
   };
 }
 
 async function main(): Promise<void> {
   try {
     const args = parseCliArgs(process.argv);
+
+    // `--explain-endpoint <name>` is sugar for `<name> --help`, useful for
+    // permission patterns like `bunx restless config.json --explain-endpoint *`.
+    if (args.explainEndpoint) {
+      args.operationId = args.explainEndpoint;
+      args.help = true;
+    }
 
     if (args.help && !args.configPath) {
       printUsage();
